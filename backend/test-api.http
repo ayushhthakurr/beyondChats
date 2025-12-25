@@ -1,0 +1,48 @@
+### BeyondChats API Testing
+### Base URL
+@baseUrl = http://localhost:3000
+
+### Test 1: Check if server is running
+GET {{baseUrl}}/
+###
+
+### Test 2: Create a new article
+POST {{baseUrl}}/api/articles
+Content-Type: application/json
+
+{
+  "title": "Introduction to BeyondChats",
+  "content": "BeyondChats is an innovative platform for managing and generating articles.",
+  "source_url": "https://beyondchats.com/intro",
+  "source_type": "web",
+  "is_generated": false,
+  "parent_article_id": null,
+  "references": ["AI", "Chat", "Articles"]
+}
+###
+
+### Test 3: Create another article
+POST {{baseUrl}}/api/articles
+Content-Type: application/json
+
+{
+  "title": "Getting Started with APIs",
+  "content": "APIs are essential for modern web development. This guide covers the basics.",
+  "source_url": "https://example.com/api-guide",
+  "source_type": "web",
+  "is_generated": false
+}
+###
+
+### Test 4: Get all articles
+GET {{baseUrl}}/api/articles
+###
+
+### Test 5: Get article by ID (replace {id} with actual ID from previous responses)
+GET {{baseUrl}}/api/articles/1
+###
+
+### Test 6: Get article by ID - example with UUID
+GET {{baseUrl}}/api/articles/550e8400-e29b-41d4-a716-446655440000
+###
+
