@@ -11,48 +11,78 @@ const httpClient = axios.create({
 async function scrapeArticles() {
   const baseUrl = 'https://beyondchats.com/blogs';
 
-  console.log('Fetching blog page...');
+  console.log('Fetching blog homepage...');
   const response = await httpClient.get(baseUrl);
   const $ = cheerio.load(response.data);
 
-  // Find the last page number from pagination
+  // Detect last pagination page
   let lastPage = 1;
-  $('.ct-pagination a.page-numbers').each((i, el) => {
+  $('.ct-pagination a.page-numbers').each((_, el) => {
     const href = $(el).attr('href');
-    if (href && href.includes('/page/')) {
-      const pageMatch = href.match(/\/page\/(\d+)\//);
-      if (pageMatch) {
-        const pageNum = parseInt(pageMatch[1]);
-        if (pageNum > lastPage) {
-          lastPage = pageNum;
-        }
-      }
+    const match = href && href.match(/\/page\/(\d+)\//);
+    if (match) {
+      lastPage = Math.max(lastPage, parseInt(match[1], 10));
     }
   });
 
-  console.log(`Last page: ${lastPage}`);
-  console.log(`Fetching page ${lastPage}...`);
+  console.log(`Last page detected: ${lastPage}`);
 
-  // Fetch the last page to get the oldest articles
-  const lastPageUrl = lastPage > 1 ? `${baseUrl}/page/${lastPage}/` : baseUrl;
-  const lastPageResponse = await httpClient.get(lastPageUrl);
-  const $lastPage = cheerio.load(lastPageResponse.data);
+  // Extract ONLY real article URLs
+  function extractArticleUrls($page) {
+    const urls = [];
 
-  const articleUrls = [];
-  $lastPage('a').each((i, el) => {
-    const href = $lastPage(el).attr('href');
-    if (href && href.startsWith('https://beyondchats.com/blogs/') &&
-        href !== 'https://beyondchats.com/blogs/' &&
+    $page('article a[href^="https://beyondchats.com/blogs/"]').each((_, el) => {
+      const href = $page(el).attr('href');
+
+      if (
+        href &&
         !href.includes('/page/') &&
         !href.includes('/tag/') &&
-        !articleUrls.includes(href)) {
-      articleUrls.push(href);
+        !urls.includes(href)
+      ) {
+        urls.push(href);
+      }
+    });
+
+    return urls;
+  }
+
+  // Collect 5 oldest articles
+  const targetCount = 5;
+  let currentPage = lastPage;
+  const articlesToScrape = [];
+
+  while (articlesToScrape.length < targetCount && currentPage >= 1) {
+    console.log(`Fetching page ${currentPage}...`);
+
+    const pageUrl =
+      currentPage === 1 ? baseUrl : `${baseUrl}/page/${currentPage}/`;
+
+    const pageResponse = await httpClient.get(pageUrl);
+    const $page = cheerio.load(pageResponse.data);
+
+    let pageArticles = extractArticleUrls($page);
+
+    // Page shows newest → oldest, so reverse it
+    pageArticles = pageArticles.reverse();
+
+    for (const url of pageArticles) {
+      if (articlesToScrape.length < targetCount) {
+        articlesToScrape.push(url);
+      } else {
+        break;
+      }
     }
-  });
 
-  const articlesToScrape = articleUrls.slice(0, 5);
-  console.log(`Found ${articlesToScrape.length} articles to scrape`);
+    currentPage--;
+  }
 
+  console.log(
+    `Scraping ${articlesToScrape.length} oldest articles`,
+    articlesToScrape
+  );
+
+  // Scrape article content
   const scrapedArticles = [];
 
   for (let i = 0; i < articlesToScrape.length; i++) {
@@ -63,20 +93,24 @@ async function scrapeArticles() {
       const articleResponse = await httpClient.get(url);
       const $article = cheerio.load(articleResponse.data);
 
-      const title = $article('h1').first().text().trim() ||
-                    $article('title').text().trim() ||
-                    'Untitled Article';
+      const title =
+        $article('h1').first().text().trim() ||
+        $article('title').text().trim() ||
+        'Untitled Article';
 
       let content = '';
-      $article('article p, .content p, .post-content p, main p').each((i, el) => {
-        const text = $article(el).text().trim();
-        if (text) {
-          content += text + '\n\n';
+
+      $article('article p, .content p, .post-content p, main p').each(
+        (_, el) => {
+          const text = $article(el).text().trim();
+          if (text) {
+            content += text + '\n\n';
+          }
         }
-      });
+      );
 
       if (!content) {
-        $article('p').each((i, el) => {
+        $article('p').each((_, el) => {
           const text = $article(el).text().trim();
           if (text && text.length > 50) {
             content += text + '\n\n';
@@ -84,21 +118,17 @@ async function scrapeArticles() {
         });
       }
 
-      content = content.trim();
-
-      const article = {
-        title: title,
-        content: content,
+      scrapedArticles.push({
+        title,
+        content: content.trim(),
         source_url: url,
         source_type: 'beyondchats',
         is_generated: false
-      };
+      });
 
-      scrapedArticles.push(article);
-      console.log(`Article ${i + 1} scraped: ${title.substring(0, 50)}...`);
-
+      console.log(`✔ Scraped: ${title.substring(0, 50)}...`);
     } catch (error) {
-      console.error(`Error scraping ${url}:`, error.message);
+      console.error(`✖ Error scraping ${url}:`, error.message);
     }
   }
 
@@ -107,4 +137,3 @@ async function scrapeArticles() {
 }
 
 module.exports = scrapeArticles;
-

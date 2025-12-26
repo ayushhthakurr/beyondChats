@@ -28,7 +28,7 @@ A standalone automation script handles scraping:
 2. Detects pagination and finds the last page
 3. Navigates to that page (where the oldest articles live)
 4. Extracts article links
-5. Scrapes the first 5 articles
+5. Scrapes the oldest 5 articles
 6. Sends the data to the backend via REST API
 
 The backend exposes CRUD APIs and stores everything in SQLite.
@@ -292,9 +292,3 @@ Creates a new article
 - No articles → Run the scraping script
 - Frontend errors → Ensure backend is running
 - Generator fails → Ensure at least one article exists
-
----
-
-## License
-
-ISC
