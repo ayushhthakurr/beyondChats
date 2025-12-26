@@ -15,11 +15,35 @@ async function scrapeArticles() {
   const response = await httpClient.get(baseUrl);
   const $ = cheerio.load(response.data);
 
-  const articleUrls = [];
-  $('a').each((i, el) => {
+  // Find the last page number from pagination
+  let lastPage = 1;
+  $('.ct-pagination a.page-numbers').each((i, el) => {
     const href = $(el).attr('href');
+    if (href && href.includes('/page/')) {
+      const pageMatch = href.match(/\/page\/(\d+)\//);
+      if (pageMatch) {
+        const pageNum = parseInt(pageMatch[1]);
+        if (pageNum > lastPage) {
+          lastPage = pageNum;
+        }
+      }
+    }
+  });
+
+  console.log(`Last page: ${lastPage}`);
+  console.log(`Fetching page ${lastPage}...`);
+
+  // Fetch the last page to get the oldest articles
+  const lastPageUrl = lastPage > 1 ? `${baseUrl}/page/${lastPage}/` : baseUrl;
+  const lastPageResponse = await httpClient.get(lastPageUrl);
+  const $lastPage = cheerio.load(lastPageResponse.data);
+
+  const articleUrls = [];
+  $lastPage('a').each((i, el) => {
+    const href = $lastPage(el).attr('href');
     if (href && href.startsWith('https://beyondchats.com/blogs/') &&
         href !== 'https://beyondchats.com/blogs/' &&
+        !href.includes('/page/') &&
         !href.includes('/tag/') &&
         !articleUrls.includes(href)) {
       articleUrls.push(href);
