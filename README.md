@@ -251,11 +251,6 @@ Open a **new terminal** and run:
 ```bash
 cd scripts
 npm install
-
-# Copy .env.example to .env and add your Groq API key
-cp .env.example .env
-# Edit .env and add: GROQ_API_KEY=your_key_here
-
 npm start
 ```
 
