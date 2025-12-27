@@ -15,7 +15,7 @@ async function scrapeArticles() {
   const response = await httpClient.get(baseUrl);
   const $ = cheerio.load(response.data);
 
-  // Detect last pagination page
+  // Find the last page number from pagination
   let lastPage = 1;
   $('.ct-pagination a.page-numbers').each((_, el) => {
     const href = $(el).attr('href');
@@ -27,7 +27,7 @@ async function scrapeArticles() {
 
   console.log(`Last page detected: ${lastPage}`);
 
-  // Extract ONLY real article URLs
+  // Helper to extract only real article URLs (not tags or pagination)
   function extractArticleUrls($page) {
     const urls = [];
 
@@ -47,7 +47,7 @@ async function scrapeArticles() {
     return urls;
   }
 
-  // Collect 5 oldest articles
+  // Collect 5 oldest articles by going backwards from the last page
   const targetCount = 5;
   let currentPage = lastPage;
   const articlesToScrape = [];
@@ -63,7 +63,7 @@ async function scrapeArticles() {
 
     let pageArticles = extractArticleUrls($page);
 
-    // Page shows newest → oldest, so reverse it
+    // Each page shows newest first, so reverse to get oldest first
     pageArticles = pageArticles.reverse();
 
     for (const url of pageArticles) {
@@ -82,7 +82,7 @@ async function scrapeArticles() {
     articlesToScrape
   );
 
-  // Scrape article content
+  // Now scrape each article's content
   const scrapedArticles = [];
 
   for (let i = 0; i < articlesToScrape.length; i++) {

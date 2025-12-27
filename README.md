@@ -1,47 +1,116 @@
-## BeyondChats Article System
+# BeyondChats Article Automation System
 
-This project is a full-stack system that scrapes articles from the BeyondChats blog, generates enhanced versions using external references, and displays everything in a clean web interface.
-It’s built as an end-to-end pipeline where each part has a clear responsibility: scraping, processing, storage, and presentation — all connected through a REST API.
+A complete article scraping, optimization, and display system with three distinct components working together through a REST API.
 
+---
 
-## What This Project Does (High Level)
+## 📋 Table of Contents
 
-The system works in three clear phases:
-1. Scrape articles from the BeyondChats blog
-2. Generate AI-enhanced versions using external references
-3. Display everything in a responsive frontend
+- [Overview](#overview)
+- [Project Structure](#project-structure)
+- [Task 1: Scrape & Store Articles](#task-1-scrape--store-articles)
+- [Task 2: Generate Optimized Articles](#task-2-generate-optimized-articles)
+- [Task 3: Frontend Display](#task-3-frontend-display)
+- [How to Run](#how-to-run)
+- [System Architecture](#system-architecture)
+- [API Reference](#api-reference)
 
-Each phase is independent but connected through the backend API, which keeps the architecture clean and easy to extend.
+---
 
+## Overview
 
-## Phase 1: Article Scraping & Storage
+This system implements three independent but connected tasks:
 
-### Goal
+1. **Scrape oldest articles** from BeyondChats blog → Store in database via API
+2. **Fetch latest article** → Search Google → Scrape competitors → Generate improved version with LLM → Publish with citations
+3. **Display articles** in a React frontend with clear visual distinction between original and generated content
 
-Fetch the 5 oldest articles from the BeyondChats blog and store them in a database using a backend API.
+**Technology Stack:** Node.js, Express, SQLite, React, TypeScript, Groq LLM API
 
-### How It Works
+---
 
-A standalone automation script handles scraping:
+## Project Structure
 
-1. Loads the BeyondChats blog homepage
-2. Detects pagination and finds the last page
-3. Navigates to that page (where the oldest articles live)
-4. Extracts article links
-5. Scrapes the oldest 5 articles
-6. Sends the data to the backend via REST API
+```
+beyondchats/
+├── backend/                    # Express API + SQLite database
+│   ├── src/
+│   │   ├── server.js          # Main server entry point
+│   │   ├── controllers/       # API request handlers
+│   │   ├── models/            # Database models
+│   │   ├── routes/            # API routes
+│   │   └── db/                # Database setup
+│   ├── articles.db            # SQLite database (created on first run)
+│   └── package.json
+│
+├── scripts/                   # Automation scripts (Tasks 1 & 2)
+│   ├── src/
+│   │   ├── index.js          # Main entry point (runs both tasks)
+│   │   │
+│   │   # TASK 1 FILES:
+│   │   ├── scrape.js         # Scrapes oldest articles from BeyondChats
+│   │   ├── rewrite.js        # Saves scraped articles to backend
+│   │   │
+│   │   # TASK 2 FILES:
+│   │   ├── fetchLatest.js    # Fetches latest article from backend
+│   │   ├── googleSearch.js   # Searches Google & scrapes competitors
+│   │   ├── llmRewriter.js    # Rewrites article using Groq LLM
+│   │   └── publishArticle.js # Publishes generated article to backend
+│   │
+│   ├── .env                   # Configuration (API keys)
+│   └── package.json
+│
+├── frontend/                  # React + TypeScript UI
+│   ├── src/
+│   │   ├── App.tsx           # Main component with all logic
+│   │   ├── App.css           # Styling
+│   │   └── main.tsx          # Entry point
+│   └── package.json
+│
+├── docs/
+│   └── architecture.jpeg      # Visual architecture diagram
+│
+└── README.md                  # This file
+```
 
-The backend exposes CRUD APIs and stores everything in SQLite.
+**Key Points:**
+- Only **3 top-level folders**: `backend/`, `scripts/`, `frontend/`
+- `scripts/` contains BOTH Task 1 and Task 2 in a single automated flow
+- Clear file names indicate purpose
+- No duplicate or test files
 
-### Important Files
+---
 
-- `automation/src/index.js` – Entry point for the scraping flow
-- `automation/src/scrape.js` – Scraping and parsing logic
-- `automation/src/rewrite.js` – Sends scraped data to backend
-- `backend/src/server.js` – Express server
-- `backend/src/controllers/articleController.js` – API handlers
-- `backend/src/models/articleModel.js` – Database logic
-- `backend/src/db/database.js` – SQLite setup
+## Task 1: Scrape & Store Articles
+
+### What It Does
+
+1. Loads https://beyondchats.com/blogs/
+2. Detects pagination and navigates to the **last page** (oldest articles)
+3. Scrapes the **5 oldest articles**
+4. Saves them to the database via backend CRUD API
+
+### Files Involved
+
+| File | Purpose |
+|------|---------|
+| `scripts/src/scrape.js` | Scraping logic with cheerio |
+| `scripts/src/rewrite.js` | Sends articles to backend API |
+| `scripts/src/index.js` | Orchestrates the flow |
+
+### Flow
+
+```
+BeyondChats Blog
+    ↓
+scrape.js (extract articles)
+    ↓
+rewrite.js (POST to /api/articles)
+    ↓
+Backend API
+    ↓
+SQLite Database
+```
 
 ### Database Schema
 
@@ -51,9 +120,9 @@ CREATE TABLE articles (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   source_url TEXT,
-  source_type TEXT,
+  source_type TEXT DEFAULT 'beyondchats',
   is_generated INTEGER DEFAULT 0,
-  parent_article_id TEXT,
+  original_article_id TEXT,
   references TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -62,135 +131,103 @@ CREATE TABLE articles (
 
 ---
 
-## Phase 2: AI Article Generation
+## Task 2: Generate Optimized Articles
 
-### Goal
+### What It Does
 
-Automatically generate an enhanced version of an existing article using external references.
+1. **Fetches** the latest article from backend API
+2. **Searches** Google for the article title
+3. **Scrapes** the first 2 blog/article results from Google
+4. **Calls Groq LLM** to rewrite the original article by:
+   - Analyzing competitor content
+   - Improving formatting and comprehensiveness
+   - Matching style of top-ranking content
+5. **Publishes** the generated article back to backend
+6. **Cites** the 2 competitor articles at the bottom
 
-### Workflow
+### Files Involved
 
-The generator script follows this flow:
+| File | Purpose |
+|------|---------|
+| `scripts/src/fetchLatest.js` | GET latest article from backend |
+| `scripts/src/googleSearch.js` | Google search + scrape competitors |
+| `scripts/src/llmRewriter.js` | LLM API call (Groq) |
+| `scripts/src/publishArticle.js` | POST generated article to backend |
+| `scripts/src/index.js` | Orchestrates the flow |
 
-1. Fetches the latest article from the backend
-2. Searches Google using the article title
-3. Extracts the first two relevant article/blog links
-4. Scrapes content from those links
-5. Generates an updated article (currently mocked)
-6. Appends references at the end
-7. Saves the generated article back to the backend
+### Flow
 
-Generated articles are clearly linked to their originals.
-
-### How Generated Articles Are Tracked
-
-- `is_generated = 1` marks AI-generated content
-- `parent_article_id` links back to the original article
-- `references` stores the external source URLs
+```
+Backend API (GET /api/articles)
+    ↓
+fetchLatest.js (get latest article)
+    ↓
+googleSearch.js (search + scrape 2 competitors)
+    ↓
+llmRewriter.js (call Groq LLM API)
+    ↓
+publishArticle.js (POST /api/articles)
+    ↓
+Backend API
+    ↓
+Database (with references field populated)
+```
 
 ### LLM Integration
 
-Right now, the generation logic is mocked to keep the project free and simple.
-The structure is already set up for easy integration with OpenAI or Anthropic.
+- **API Used:** Groq (free tier with generous limits)
+- **Model:** Llama 3.1 70B Versatile
+- **Fallback:** If no API key, uses demo mode
+- **Get API Key:** https://console.groq.com/keys
 
-Replacing the mock logic with a real LLM requires minimal changes.
+### How Generated Articles Are Tracked
 
-### Key File
-
-- `article-generator/index.js` – Complete generation pipeline
+- `is_generated = 1` → Marks AI-generated content
+- `original_article_id` → Links to source article
+- `references` → JSON array of competitor URLs
+- `source_type = 'llm_generated'`
 
 ---
 
-## Phase 3: Frontend Display
+## Task 3: Frontend Display
 
-### What the Frontend Does
+### What It Does
 
-A React + TypeScript web app that displays both original and generated articles.
+Displays all articles (original and generated) in a clean, responsive React interface.
 
 ### Features
 
-- List view with clickable article cards
-- Clear visual distinction:
+- **List View:** All articles as clickable cards
+- **Visual Distinction:**
+  - Original articles → Blue border
+  - Generated articles → Purple border
+- **Detail View:** Full content with metadata
+- **References:** Shows cited sources for generated articles
+- **Relationship Links:** Navigate between original ↔ generated
+- **Responsive Design:** Works on all screen sizes
 
-    - Original articles → Blue
-    - Generated articles → Purple
-- Full article view with metadata
-- Parent–child relationship links
-- Reference links for generated articles
-- Responsive layout for all screen sizes
+### Files Involved
 
-### API Used
+| File | Purpose |
+|------|---------|
+| `frontend/src/App.tsx` | Main component (list + detail views) |
+| `frontend/src/App.css` | All styling |
+| `frontend/src/main.tsx` | Renders React app |
 
-- `GET http://localhost:3000/api/articles`
+### API Endpoints Used
 
-### Key Files
-
-- `frontend/src/App.tsx` – Main UI logic
-- `frontend/src/App.css` – Styling
-- `frontend/src/main.tsx` – Entry point
-
----
-
-## Architecture Overview
-
-### System Architecture
-
-```
-Scraper (Phase 1)
-        ↓
-Backend API (Express + SQLite)
-        ↑
-Generator (Phase 2)
-        ↓
-Frontend (Phase 3)
-```
-
-### Data Flow
-
-Scraping
-
-```
-BeyondChats Blog → Scraper → Backend API → Database
-```
-
-Generation
-
-```
-Backend → Google Search → Reference Scraping → Generated Article → Backend
-```
-
-Display
-
-```
-Backend API → React Frontend → Browser
-```
-
-More details are available in `docs/architecture.md`.
+- `GET http://localhost:3000/api/articles` → Fetch all articles
 
 ---
 
-## Project Structure
+## How to Run
 
-```
-beyondchats/
-├── backend/            # Express API + SQLite
-├── automation/         # Article scraping script
-├── article-generator/  # AI generation logic
-├── frontend/           # React + TypeScript UI
-├── docs/               # Architecture documentation
-└── README.md
-```
+### Prerequisites
 
----
+- Node.js 14+ installed
+- npm installed
 
-## How to Run the Project
-
-### Requirements
-
-- Node.js (v14+)
-- npm
-
-### 1. Start Backend
+### Step 1: Start Backend Server
 
 ```bash
 cd backend
@@ -198,35 +235,65 @@ npm install
 npm start
 ```
 
-Runs on `http://localhost:3000`
-
----
-
-### 2. Scrape Articles (One Time)
-
-```bash
-cd automation
-npm install
-node src/index.js
+**Expected output:**
+```
+Server running on http://localhost:3000
 ```
 
-Scrapes the 5 oldest BeyondChats articles and stores them in the database.
+**Keep this terminal running!**
 
 ---
 
-### 3. Generate Enhanced Article (Optional)
+### Step 2: Run Scripts (Tasks 1 & 2)
+
+Open a **new terminal** and run:
 
 ```bash
-cd article-generator
+cd scripts
 npm install
-node index.js
+
+# Copy .env.example to .env and add your Groq API key
+cp .env.example .env
+# Edit .env and add: GROQ_API_KEY=your_key_here
+
+npm start
 ```
 
-Creates an AI-enhanced version of the latest article.
+**What happens:**
+1. Scrapes 5 oldest articles from BeyondChats (Task 1)
+2. Saves them to database
+3. Fetches latest article (Task 2)
+4. Searches Google for competitors
+5. Generates optimized version with LLM
+6. Saves generated article with citations
+
+**Expected output:**
+```
+=== Starting BeyondChats Article Automation ===
+
+📋 MODE: Scraping new articles from BeyondChats...
+✔ Found 5 articles
+✔ New articles saved to backend
+
+============================================================
+📝 MODE: Processing latest article with SEO optimization...
+
+✔ Latest article: "Can Chatbots Boost Small Business Growth?"
+📍 Starting Google search...
+✔ Scraped 2 articles from Google search results
+🤖 Calling LLM to rewrite article...
+✔ Article successfully rewritten by LLM (Groq)
+📤 Publishing enhanced article to backend...
+✔ Article published successfully!
+
+🎉 SUCCESS! Article optimization complete.
+```
 
 ---
 
-### 4. Start Frontend
+### Step 3: Start Frontend
+
+Open a **third terminal** and run:
 
 ```bash
 cd frontend
@@ -234,61 +301,162 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser.
+Open your browser to: **http://localhost:5173**
 
 ---
 
-## Design Decisions
+## System Architecture
 
-- SQLite – Simple and lightweight for a demo project
-- Mocked LLM – Avoids paid APIs while keeping structure production-ready
-- No Authentication – Keeps focus on core functionality
-- Single-component frontend – Avoids unnecessary complexity
-- API-only communication – Clean separation between scripts and database
+### High-Level Architecture
 
----
+```
+┌─────────────────┐
+│  BeyondChats    │
+│   Blog (Web)    │
+└────────┬────────┘
+         │
+         ↓ (Task 1: Scrape)
+┌─────────────────┐       ┌──────────────┐
+│  Scripts        │←─────→│  Backend     │
+│  (Automation)   │  API  │  (Express)   │
+└────────┬────────┘       └──────┬───────┘
+         │                       │
+         ↓ (Task 2)              ↓
+┌─────────────────┐       ┌──────────────┐
+│  Google Search  │       │  SQLite DB   │
+│  + Groq LLM     │       │  (articles)  │
+└─────────────────┘       └──────┬───────┘
+                                 │
+                                 ↓ (Task 3)
+                          ┌──────────────┐
+                          │   Frontend   │
+                          │   (React)    │
+                          └──────────────┘
+```
 
-## What This Project Demonstrates
+### Data Flow
 
-- Full-stack development skills
-- REST API design
-- Web scraping and data extraction
-- External data integration
-- Frontend development with React
-- Clean system architecture
-- Clear documentation
+**Task 1 Flow:**
+```
+BeyondChats → scrape.js → rewrite.js → Backend API → Database
+```
 
----
+**Task 2 Flow:**
+```
+Database → fetchLatest.js → googleSearch.js → llmRewriter.js → publishArticle.js → Database
+```
 
-## Known Limitations
+**Task 3 Flow:**
+```
+Database → Backend API → Frontend (React) → Browser
+```
 
-- Google scraping may fail due to blocking
-- LLM generation is mocked
-- No automated tests
-- Local development only
-
-These were intentional trade-offs to keep the project focused and readable.
+See `docs/architecture.jpeg` for visual diagram.
 
 ---
 
 ## API Reference
 
-### GET `/api/articles`
+### Backend Endpoints
 
+#### GET `/api/articles`
 Returns all articles (newest first)
 
-### GET `/api/articles/:id`
+**Response:**
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "Article Title",
+    "content": "Full article content...",
+    "source_url": "https://beyondchats.com/blogs/article",
+    "source_type": "beyondchats",
+    "is_generated": 0,
+    "original_article_id": null,
+    "references": null,
+    "created_at": "2025-12-27T00:00:00.000Z",
+    "updated_at": "2025-12-27T00:00:00.000Z"
+  }
+]
+```
 
-Returns a single article
+#### GET `/api/articles/:id`
+Returns a single article by ID
 
-### POST `/api/articles`
-
+#### POST `/api/articles`
 Creates a new article
 
+**Request body:**
+```json
+{
+  "title": "Article Title",
+  "content": "Article content...",
+  "source_url": "https://example.com",
+  "source_type": "beyondchats",
+  "is_generated": 0
+}
+```
+
+#### PATCH `/api/articles/:id`
+Updates an existing article
+
+#### DELETE `/api/articles/:id`
+Deletes an article
+
+---
+
+## Configuration
+
+### Environment Variables (`scripts/.env`)
+
+```bash
+# LLM API (Groq - Free)
+GROQ_API_KEY=gsk_xxxxx
+
+# Backend URL
+BACKEND_URL=http://localhost:3000
+
+# Optional: Google Search APIs
+SERPAPI_KEY=xxxxx                    # serpapi.com (100 free/month)
+GOOGLE_SEARCH_API_KEY=xxxxx          # Google Custom Search
+GOOGLE_SEARCH_ENGINE_ID=xxxxx
+```
+
+**Get Free API Keys:**
+- Groq: https://console.groq.com/keys (required for Task 2)
+- SerpAPI: https://serpapi.com (optional, improves Google search)
+
+---
 
 ## Troubleshooting
 
-- Backend not starting → Check port 3000
-- No articles → Run the scraping script
-- Frontend errors → Ensure backend is running
-- Generator fails → Ensure at least one article exists
+### Backend not starting
+- **Issue:** Port 3000 already in use
+- **Solution:** Kill process: `lsof -ti:3000 | xargs kill -9`
+
+### No articles in database
+- **Issue:** Database is empty
+- **Solution:** Run `cd scripts && npm start` to scrape articles
+
+### "Using demo rewrite mode"
+- **Issue:** GROQ_API_KEY not configured
+- **Solution:** Add API key to `scripts/.env`
+
+### Frontend errors
+- **Issue:** Cannot connect to backend
+- **Solution:** Ensure backend is running on port 3000
+
+### "Using demo competitor articles"
+- **Issue:** Google search API not configured (normal)
+- **Solution:** System uses fallback demo mode or DuckDuckGo. For production, add SERPAPI_KEY
+
+---
+
+## Next Steps (Future Enhancements)
+
+- Add automated tests
+- Implement real-time Google search with proper API
+- Add authentication and user management
+- Deploy to production (Vercel + Railway)
+- Add article scheduling and automated generation
+- Implement caching for better performance

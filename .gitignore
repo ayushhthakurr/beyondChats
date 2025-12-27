@@ -2,9 +2,11 @@ node_modules/
 *.log
 .DS_Store
 *.db
-.env
+# .env - Normally excluded, but included in this repo for demo/testing convenience
 dist/
 build/
 .vscode/
 .idea/
+
+
 
